@@ -23,8 +23,8 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "ضع_مفتاح_جروج_هنا")
 PDF_PATH = os.getenv("PDF_PATH", "magazine.pdf")
 PAGE_TRACKER_FILE = "current_page.txt"
 
-# التذييل الإجباري لمنشورات كل 3 ساعات
-MANDATORY_FOOTER = "هذي القناة هي صدقه جارية للأخت الأندلسية أم عقيدة وحمزة غـفر الله لها وجعلها في ميزان حسناتها ☝🏻⚔️🖤"
+# التذييل الإجباري لمنشورات كل 3 ساعات (بدون إيموجي)
+MANDATORY_FOOTER = "هذي القناة هي صدقه جارية للأخت الأندلسية أم عقيدة وحمزة غفر الله لها وجعلها في ميزان حسناتها."
 
 # تهيئة مكتبة جروج (Groq)
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
@@ -69,9 +69,9 @@ def extract_page_data(pdf_path, page_num):
         return None, None, 0
 
 async def generate_groq_magazine_caption(raw_text, page_num):
-    """إعادة صياغة نص صفحة المجلة عبر جروج (Groq AI)"""
+    """إعادة صياغة نص صفحة المجلة عبر جروج (Groq AI) بدون إيموجي ومع هاشتاجات مرتبة"""
     if not groq_client or not raw_text or len(raw_text.strip()) < 10:
-        return f"📖 **منشور المجلة - الصفحة {page_num}**\n\n{raw_text[:800]}..."
+        return f"منشور المجلة - الصفحة {page_num}\n\n{raw_text[:800]}..."
 
     prompt = f"""
 أنت مساعد محتوى إسلامي احترافي. أعد صياغة وتنسيق النص التالي المستخرج من مجلة إسلامية ليكون منشوراً رائعاً وجذاباً لقناة تليجرام:
@@ -80,11 +80,14 @@ async def generate_groq_magazine_caption(raw_text, page_num):
 {raw_text}
 ---
 
-المطلوب:
-1. نسّق النص باستخدام الماركداون (عناوين، نقاط، إيموجي إسلامية مناسبة).
-2. اجعل الصياغة قوية وواضحة.
-3. أضف هاشتاجات مناسبة في نهاية النص.
-4. اعد النص فقط بدون مقدمات.
+المطلوب والتعليمات الصارمة:
+1. يمنع منعاً باتاً استخدام أي إيموجي أو رموز تعبيرية نهائياً.
+2. نسّق النص باستخدام الماركداون (عناوين وضبط الأسطر).
+3. اجعل الصياغة قوية وواضحة ومرتبة.
+4. أضف هاشتاجات مناسبة في نهاية النص بحيث تكون مرتبة كل هاشتاج في سطر منفصل تماماً، مثل:
+#تنظيم_قاعدة_الجهاد
+#أنصار_الشريعة
+5. اعد النص فقط بدون أي مقدمات أو كلام جانبي.
 """
     try:
         loop = asyncio.get_running_loop()
@@ -93,13 +96,13 @@ async def generate_groq_magazine_caption(raw_text, page_num):
             lambda: groq_client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
                 model="llama-3.3-70b-versatile",
-                temperature=0.6,
+                temperature=0.5,
             )
         )
         return response.choices[0].message.content
     except Exception as e:
         logging.error(f"خطأ أثناء الاتصال بجروج (Groq): {e}")
-        return f"📖 **منشور المجلة - الصفحة {page_num}**\n\n{raw_text[:800]}..."
+        return f"منشور المجلة - الصفحة {page_num}\n\n{raw_text[:800]}..."
 
 async def publish_magazine_page(bot: Bot):
     """نشر صفحة من المجلة (الصباح والمساء)"""
@@ -113,7 +116,7 @@ async def publish_magazine_page(bot: Bot):
             return
 
         caption = await generate_groq_magazine_caption(raw_text, current_page + 1)
-        final_caption = f"{caption}\n\n📢 **القناة:** {CHANNEL_USERNAME}"
+        final_caption = f"{caption}\n\nالقناة: {CHANNEL_USERNAME}"
 
         if len(final_caption) > 1024:
             final_caption = final_caption[:1020] + "..."
@@ -142,11 +145,11 @@ async def publish_magazine_page(bot: Bot):
 # 🔄 وظيفة النشر كل 3 ساعات عبر جروج (Groq)
 # ==========================================
 async def generate_motivational_content():
-    """توليد توجيهات ونصائح تحفيزية عبر جروج (Groq AI)"""
+    """توليد توجيهات ونصائح تحفيزية بدون إيموجي ومع هاشتاجات مرتبة"""
     fallback_messages = [
-        "إلى الإخوة والأخوات الموحدين: ثباتكم على الحق هو الحصن المنيع للأمة. استعينوا بالله ولا تعجزوا، وكونوا دائماً يداً واحدة ودرعاً حامياً لقضايا أمتكم الإسلامية. ⚔️",
-        "نصيحة للموحدين المناصرين: اجعلوا عملكم خالصاً لوجه الله، وتسلحوا بالوعي والعلم، واعلموا أن كلمة الحق ونصرة المظلوم هي سهم في حماية الأمة ودفع الظلم عنها. ☝🏻",
-        "يا أبناء الأمة الإسلامية: إن الأمة اليوم بأشد الحاجة إلى الوعي والثبات. كونوا درعاً للأمة ونوراً يضيء طريق الموحدين بالتذكير والدعاء والنصرة بالكلمة الطيبة."
+        "إلى الإخوة والأخوات الموحدين: ثباتكم على الحق هو الحصن المنيع للأمة. استعينوا بالله ولا تعجزوا، وكونوا دائماً يداً واحدة ودرعاً حامياً لقضايا أمتكم الإسلامية.\n\n#ثبات_الموحدين\n#سبحان_الله",
+        "نصيحة للموحدين المناصرين: اجعلوا عملكم خالصاً لوجه الله، وتسلحوا بالوعي والعلم، واعلموا أن كلمة الحق ونصرة المظلوم هي سهم في حماية الأمة ودفع الظلم عنها.\n\n#نصرة_الحق\n#الحمدلله_ربي",
+        "يا أبناء الأمة الإسلامية: إن الأمة اليوم بأشد الحاجة إلى الوعي والثبات. كونوا درعاً للأمة ونوراً يضيء طريق الموحدين بالتذكير والدعاء والنصرة بالكلمة الطيبة.\n\n#وعي_الأمة\n#الله_أكبر"
     ]
 
     if not groq_client:
@@ -158,9 +161,12 @@ async def generate_motivational_content():
 1. نصائح وتوجيهات هامة للموحدين في الثبات، الصبر، الإخلاص، والوعي.
 2. رسائل تحفيزية ومشجعة تحثهم على أن يكونوا درعاً حامياً للأمة الإسلامية ونصرة قضاياها بالكلمة والحق.
 
-الشروط:
+التعليمات الصارمة:
 - أسلوب قوي، إيماني، وبليغ.
-- استخدام التنسيق الجذاب مع الرموز التعبيرية (Emojis) والهاشتاجات.
+- يمنع منعاً باتاً استخدام أي إيموجي أو رموز تعبيرية نهائياً.
+- أضف هاشتاجات إسلامية مناسبة في النهاية بحيث يكون كل هاشتاج في سطر منفصل، مثل:
+#الحمدلله_ربي
+#سبحان_الله
 - الطول: فقرة إلى فقرتين قصيرة فقط.
 - اعد النص المكتوب مباشرة بدون أي مقدمات أو كلام جانبي.
 """
@@ -171,7 +177,7 @@ async def generate_motivational_content():
             lambda: groq_client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
                 model="llama-3.3-70b-versatile",
-                temperature=0.7,
+                temperature=0.6,
             )
         )
         return response.choices[0].message.content
@@ -204,10 +210,10 @@ async def publish_interval_post(bot: Bot):
 # 💬 الرد والتفاعل مع رسائل الأعضاء والمجموعة
 # ==========================================
 async def generate_channel_post_comment(post_text: str) -> str:
-    """توليد تعليق إسلامي تلقائي على منشورات القناة في المجموعة"""
+    """توليد تعليق إسلامي تلقائي على منشورات القناة في المجموعة بدون إيموجي"""
     fallback = (
-        "بارك الله فيكم على هذا المنشور القيّم 🤍\n"
-        "نسأل الله أن ينفع به الأمة ويجعله في ميزان حسنات الجميع. ☝🏻⚔️"
+        "بارك الله فيكم على هذا المنشور القيّم.\n"
+        "نسأل الله أن ينفع به الأمة ويجعله في ميزان حسنات الجميع."
     )
 
     if not groq_client:
@@ -221,6 +227,7 @@ async def generate_channel_post_comment(post_text: str) -> str:
 المطلوب:
 - اكتب تعليقاً قصيراً ومحفزاً على هذا المنشور (3 أسطر كحد أقصى).
 - أسلوب إيماني دافئ يشجع الإخوة والأخوات على التفاعل والقراءة.
+- يمنع منعاً باتاً استخدام أي إيموجي أو رموز تعبيرية.
 - اكتب التعليق مباشرة بدون مقدمات."""
 
     try:
@@ -230,7 +237,7 @@ async def generate_channel_post_comment(post_text: str) -> str:
             lambda: groq_client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
                 model="llama-3.3-70b-versatile",
-                temperature=0.6,
+                temperature=0.5,
                 max_tokens=200,
             )
         )
@@ -241,10 +248,10 @@ async def generate_channel_post_comment(post_text: str) -> str:
 
 
 async def generate_islamic_reply(user_message: str, user_name: str) -> str:
-    """توليد رد إسلامي دافئ على كل رسائل الأعضاء عبر Groq"""
+    """توليد رد إسلامي دافئ على كل رسائل الأعضاء عبر Groq بدون إيموجي"""
     fallback = (
-        f"أهلاً بك أخي/أختي {user_name} 🤍\n"
-        "جزاك الله خيراً وبارك الله فيك، ونسأل الله أن يثبتنا وإياك على الحق. ☝🏻⚔️"
+        f"أهلاً بك أخي/أختي {user_name}.\n"
+        "جزاك الله خيراً وبارك الله فيك، ونسأل الله أن يثبتنا وإياك على الحق."
     )
 
     if not groq_client:
@@ -260,6 +267,7 @@ async def generate_islamic_reply(user_message: str, user_name: str) -> str:
 - إذا كانت الرسالة سؤالاً شرعياً أو عاماً، أجب بما يوافق مذهب أهل السنة والجماعة مع الاستشهاد بالدليل إن أمكن.
 - إذا كانت مشاركة أو تحية أو تعليقاً، رد بتحية طيبة ودعاء رائع.
 - اختم دائماً بدعاء أو جملة تحفيزية قصيرة.
+- يمنع منعاً باتاً استخدام أي إيموجي أو رموز تعبيرية.
 - الرد لا يزيد عن 4 إلى 5 أسطر.
 - لا تذكر أبداً أنك ذكاء اصطناعي.
 - اكتب الرد مباشرة بدون مقدمات."""
@@ -271,7 +279,7 @@ async def generate_islamic_reply(user_message: str, user_name: str) -> str:
             lambda: groq_client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
                 model="llama-3.3-70b-versatile",
-                temperature=0.6,
+                temperature=0.5,
                 max_tokens=300,
             )
         )
@@ -282,7 +290,7 @@ async def generate_islamic_reply(user_message: str, user_name: str) -> str:
 
 
 async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالجة كافة رسائل المجموعة والخاص بدون اشتراط علامة استفهام"""
+    """معالجة كافة رسائل المجموعة والخاص"""
     try:
         message = update.message
         if not message or not message.text:
@@ -327,12 +335,12 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
 async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """أمر لتجربة النشر الفوري للقناة"""
     try:
-        await update.message.reply_text("⏳ جاري اختبار النشر الفوري للمجلة والمنشور الدوري...")
+        await update.message.reply_text("جاري اختبار النشر الفوري للمجلة والمنشور الدوري...")
         await publish_magazine_page(context.bot)
         await publish_interval_post(context.bot)
-        await update.message.reply_text("✅ تم إرسال المنشورات بنجاح إلى القناة!")
+        await update.message.reply_text("تم إرسال المنشورات بنجاح إلى القناة.")
     except Exception as e:
-        await update.message.reply_text(f"❌ حدث خطأ أثناء الاختبار: {e}")
+        await update.message.reply_text(f"حدث خطأ أثناء الاختبار: {e}")
 
 
 # ==========================================
@@ -388,4 +396,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-        
