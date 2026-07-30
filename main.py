@@ -253,7 +253,7 @@ async def generate_islamic_reply(user_message: str, user_name: str) -> str:
     if not groq_client:
         return fallback
 
-    prompt = f"""أنت مساعد إسلامي متخصص في الفقه والتوجيه الديني، تتحدث بأسلوب لطيف ومحبب موجه للإخوة والأخوات الموحدين والمناصرين.
+    prompt = f"""أنت مساعد إسلامي متخصص في الفقه والتوجيه الديني، تتحدث بأسلوب لطيف ومحبب موجه للموحدين والمناصرين.
 
 رسالة العضو ({user_name}):
 {user_message}
@@ -338,39 +338,57 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 # ==========================================
-# ⏰ المحرك والجدولة الرئيسية (Asyncio Scheduler)
+# ⏰ المحرك والجدولة الرئيسية (post_init + run_polling)
 # ==========================================
-def main():
-    # 1. بناء التطبيق
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
+async def post_init(application: Application) -> None:
+    """يُستدعى بعد تهيئة التطبيق — نبدأ الجدولة والمنشور الأول هنا"""
     bot = application.bot
+    tz = pytz.timezone("Africa/Algiers")  # توقيت الجزائر/مكة
 
-    # 2. إضافة معالج رسائل المجموعة
+    scheduler = AsyncIOScheduler(timezone=tz)
+
+    # 1. جدول منشورات المجلة (الصباح 09:00 والمساء 20:00)
+    scheduler.add_job(publish_magazine_page, 'cron', hour=9, minute=0, args=[bot])
+    scheduler.add_job(publish_magazine_page, 'cron', hour=20, minute=0, args=[bot])
+
+    # 2. جدول المنشورات التحفيزية عبر Groq (كل 3 ساعات)
+    scheduler.add_job(publish_interval_post, 'interval', hours=3, args=[bot])
+
+    scheduler.start()
+    application.bot_data['scheduler'] = scheduler
+    logging.info("تم تشغيل الجدولة بنجاح (المجلة + منشور كل 3 ساعات + ردود المجموعة)...")
+
+    # 🚀 نشر فوري عند الانطلاق للتأكد من عمل البوت
+    logging.info("جاري نشر أول منشور تجريبي...")
+    await publish_magazine_page(bot)
+
+
+async def post_stop(application: Application) -> None:
+    """يُستدعى عند إيقاف التطبيق — نوقف الجدولة بأمان"""
+    scheduler = application.bot_data.get('scheduler')
+    if scheduler and scheduler.running:
+        scheduler.shutdown()
+        logging.info("تم إيقاف الجدولة بأمان.")
+
+
+def main():
+    application = (
+        Application.builder()
+        .token(TELEGRAM_TOKEN)
+        .post_init(post_init)
+        .post_stop(post_stop)
+        .build()
+    )
+
+    # إضافة معالج رسائل المجموعة
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_group_message)
     )
 
-    # 3. إعداد المجدول (Scheduler)
-    tz = pytz.timezone("Africa/Algiers")  # توقيت الجزائر
-    scheduler = AsyncIOScheduler(timezone=tz)
-
-    # جدول منشورات المجلة (الصباح 09:00 والمساء 20:00)
-    scheduler.add_job(publish_magazine_page, 'cron', hour=9, minute=0, args=[bot])
-    scheduler.add_job(publish_magazine_page, 'cron', hour=20, minute=0, args=[bot])
-
-    # جدول المنشورات التحفيزية عبر Groq (كل 3 ساعات)
-    scheduler.add_job(publish_interval_post, 'interval', hours=3, args=[bot])
-
-    # بدء تشغيل المجدول
-    scheduler.start()
-    logging.info("تم تشغيل البوت والمجدول بنجاح...")
-
-    # 4. تشغيل البوت بشكل آمن مستقر يدعم الاستقبال المستمر
+    logging.info("البوت يعمل...")
     application.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except (KeyboardInterrupt, SystemExit):
-        logging.info("تم إيقاف البوت.")
+    main()
+    
