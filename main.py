@@ -20,8 +20,25 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "ضع_توكن_البوت_هنا")
 CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME", "@Athar_Dz_Islamic")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "ضع_مفتاح_جروج_هنا")
-PDF_PATH = os.getenv("PDF_PATH", "magazine.pdf")
 PAGE_TRACKER_FILE = "current_page.txt"
+
+# حدود تيليجرام
+TG_CAPTION_LIMIT = 1024   # الحد الأقصى لنص صورة تيليجرام
+TG_MESSAGE_LIMIT = 4096   # الحد الأقصى لرسالة نصية عادية
+
+def _resolve_pdf_path() -> str:
+    """يجد مسار ملف PDF الفعلي — يدعم كلاً من الملف المباشر والمجلد."""
+    raw = os.getenv("PDF_PATH", "magazine.pdf")
+    if os.path.isfile(raw):
+        return raw
+    if os.path.isdir(raw):
+        for fname in sorted(os.listdir(raw)):
+            if fname.lower().endswith(".pdf"):
+                return os.path.join(raw, fname)
+    return raw  # سيفشل بشكل صريح لاحقاً إذا لم يُوجد
+
+PDF_PATH = _resolve_pdf_path()
+logging.info(f"مسار ملف المجلة: {PDF_PATH}")
 
 # التذييل الإجباري لمنشورات كل 3 ساعات (بدون إيموجي)
 MANDATORY_FOOTER = "هذي القناة هي صدقه جارية للأخت الأندلسية أم عقيدة وحمزة غفر الله لها وجعلها في ميزان حسناتها."
@@ -104,8 +121,26 @@ async def generate_groq_magazine_caption(raw_text, page_num):
         logging.error(f"خطأ أثناء الاتصال بجروج (Groq): {e}")
         return f"منشور المجلة - الصفحة {page_num}\n\n{raw_text[:800]}..."
 
+def _split_text(text: str, first_limit: int, next_limit: int) -> list[str]:
+    """يقسّم النص إلى أجزاء مع احترام حدود تيليجرام."""
+    parts = []
+    if not text:
+        return parts
+    # الجزء الأول (caption الصورة)
+    if len(text) <= first_limit:
+        parts.append(text)
+        return parts
+    parts.append(text[:first_limit])
+    remaining = text[first_limit:]
+    # الأجزاء الباقية (رسائل نصية عادية)
+    while remaining:
+        parts.append(remaining[:next_limit])
+        remaining = remaining[next_limit:]
+    return parts
+
+
 async def publish_magazine_page(bot: Bot):
-    """نشر صفحة من المجلة (الصباح والمساء)"""
+    """نشر صفحة من المجلة: صورة + caption، ثم تكملة النص إن وُجدت."""
     try:
         current_page = get_current_page()
         logging.info(f"جاري معالجة صفحة المجلة رقم: {current_page + 1}")
@@ -115,21 +150,34 @@ async def publish_magazine_page(bot: Bot):
         if image_path is None:
             return
 
-        caption = await generate_groq_magazine_caption(raw_text, current_page + 1)
-        final_caption = f"{caption}\n\nالقناة: {CHANNEL_USERNAME}"
+        # توليد النص عبر Groq وإضافة اسم القناة
+        ai_text = await generate_groq_magazine_caption(raw_text, current_page + 1)
+        full_text = f"{ai_text}\n\nالقناة: {CHANNEL_USERNAME}"
 
-        if len(final_caption) > 1024:
-            final_caption = final_caption[:1020] + "..."
+        # تقسيم النص: الجزء الأول للـ caption والباقي كرسائل منفصلة
+        parts = _split_text(full_text, TG_CAPTION_LIMIT, TG_MESSAGE_LIMIT)
+        caption_part = parts[0] if parts else ""
+        continuation_parts = parts[1:] if len(parts) > 1 else []
 
+        # 1️⃣ إرسال الصورة مع النص الأول
         with open(image_path, 'rb') as photo:
             await bot.send_photo(
                 chat_id=CHANNEL_USERNAME,
                 photo=photo,
-                caption=final_caption,
+                caption=caption_part,
                 parse_mode=ParseMode.MARKDOWN
             )
+        logging.info(f"تم إرسال صورة الصفحة {current_page + 1} من {total_pages}")
 
-        logging.info(f"تم بنجاح نشر الصفحة {current_page + 1} من {total_pages}")
+        # 2️⃣ إرسال بقية النص في منشورات منفصلة
+        for idx, part in enumerate(continuation_parts, start=2):
+            await bot.send_message(
+                chat_id=CHANNEL_USERNAME,
+                text=part,
+                parse_mode=ParseMode.MARKDOWN
+            )
+            logging.info(f"تم إرسال الجزء {idx} من نص الصفحة {current_page + 1}")
+
         save_current_page(current_page + 1)
 
         if os.path.exists(image_path):
