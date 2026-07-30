@@ -1,4 +1,4 @@
-# 📖 بوت قناة ريحانة المغرب الأوسط
+# 📖 بوت قناة رَيْحَانَةُ المَغْرِبِ الأَوْسَطِ
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python)
 ![Asyncio](https://img.shields.io/badge/Asyncio-Enabled-green?style=for-the-badge)
