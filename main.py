@@ -6,7 +6,7 @@ import fitz  # PyMuPDF
 from telegram import Bot, Update
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
-from telegram.ext import Application, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from groq import Groq
 import pytz
@@ -201,7 +201,7 @@ async def publish_interval_post(bot: Bot):
 
 
 # ==========================================
-# 💬 الرد على رسائل المجموعة (الأسئلة الشرعية والتفاعل)
+# 💬 الرد والتفاعل مع رسائل الأعضاء والمجموعة
 # ==========================================
 async def generate_channel_post_comment(post_text: str) -> str:
     """توليد تعليق إسلامي تلقائي على منشورات القناة في المجموعة"""
@@ -221,9 +221,6 @@ async def generate_channel_post_comment(post_text: str) -> str:
 المطلوب:
 - اكتب تعليقاً قصيراً ومحفزاً على هذا المنشور (3 أسطر كحد أقصى).
 - أسلوب إيماني دافئ يشجع الإخوة والأخوات على التفاعل والقراءة.
-- يمكنك إضافة آية أو حديث مختصر يناسب موضوع المنشور إن أمكن.
-- استخدم إيموجي إسلامية مناسبة.
-- لا تكرر نص المنشور، فقط علّق عليه.
 - اكتب التعليق مباشرة بدون مقدمات."""
 
     try:
@@ -244,27 +241,27 @@ async def generate_channel_post_comment(post_text: str) -> str:
 
 
 async def generate_islamic_reply(user_message: str, user_name: str) -> str:
-    """توليد رد إسلامي على رسائل أعضاء المجموعة عبر Groq"""
+    """توليد رد إسلامي دافئ على كل رسائل الأعضاء عبر Groq"""
     fallback = (
-        "جزاك الله خيراً على مشاركتك أخي/أختي الكريم/ة. 🤍\n"
-        "نسأل الله أن يبارك فيك وأن يثبتنا وإياك على الحق. ☝🏻"
+        f"أهلاً بك أخي/أختي {user_name} 🤍\n"
+        "جزاك الله خيراً وبارك الله فيك، ونسأل الله أن يثبتنا وإياك على الحق. ☝🏻⚔️"
     )
 
     if not groq_client:
         return fallback
 
-    prompt = f"""أنت مساعد إسلامي متخصص في الفقه والتوجيه الديني، تتحدث بأسلوب لطيف ومحبب موجه للموحدين والمناصرين.
+    prompt = f"""أنت مساعد ومشرف إسلامي في مجموعة تليجرام، تتحدث بأسلوب لطيف ومحبب ومباشر موجه للإخوة والأخوات الموحدين والمناصرين.
 
 رسالة العضو ({user_name}):
 {user_message}
 
 المطلوب:
-- أجب بشكل مختصر ومفيد ومؤدب.
-- إذا كان سؤالاً شرعياً، أجب بما يوافق مذهب أهل السنة والجماعة مع الاستشهاد بالدليل إن أمكن.
-- إذا كانت مشاركة أو تعليقاً، تفاعل معه بإيجابية وإيمانية.
+- أجب أو تفاعل مع الرسالة بشكل مختصر ومفيد ومؤدب ودافئ.
+- إذا كانت الرسالة سؤالاً شرعياً أو عاماً، أجب بما يوافق مذهب أهل السنة والجماعة مع الاستشهاد بالدليل إن أمكن.
+- إذا كانت مشاركة أو تحية أو تعليقاً، رد بتحية طيبة ودعاء رائع.
 - اختم دائماً بدعاء أو جملة تحفيزية قصيرة.
-- الرد لا يزيد عن 5 أسطر.
-- لا تذكر أنك ذكاء اصطناعي.
+- الرد لا يزيد عن 4 إلى 5 أسطر.
+- لا تذكر أبداً أنك ذكاء اصطناعي.
 - اكتب الرد مباشرة بدون مقدمات."""
 
     try:
@@ -274,18 +271,18 @@ async def generate_islamic_reply(user_message: str, user_name: str) -> str:
             lambda: groq_client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
                 model="llama-3.3-70b-versatile",
-                temperature=0.5,
+                temperature=0.6,
                 max_tokens=300,
             )
         )
         return response.choices[0].message.content
     except Exception as e:
-        logging.error(f"خطأ في Groq أثناء توليد الرد على المجموعة: {e}")
+        logging.error(f"خطأ في Groq أثناء توليد الرد: {e}")
         return fallback
 
 
 async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالجة رسائل المجموعة: التعليق على منشورات القناة + الرد على أسئلة الأعضاء"""
+    """معالجة كافة رسائل المجموعة والخاص بدون اشتراط علامة استفهام"""
     try:
         message = update.message
         if not message or not message.text:
@@ -293,7 +290,7 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
         user_text = message.text.strip()
 
-        # ✅ الحالة 1: منشور من القناة ظهر في المجموعة المرتبطة
+        # ✅ الحالة 1: منشور القناة المستورد تلقائياً للمجموعة
         is_channel_post = (
             message.sender_chat is not None
             and message.sender_chat.type == "channel"
@@ -310,56 +307,58 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
         if message.from_user and message.from_user.is_bot:
             return
 
-        # ✅ الحالة 2: رسائل الأعضاء (أسئلة أو ردود أو استدعاء)
+        # ✅ الحالة 2: الرد التفاعلي المباشر على كافة رسائل الإخوة والأخوات
         user_name = message.from_user.first_name if message.from_user else "عضو"
-        bot_username = context.bot.username or ""
 
-        is_question = "?" in user_text or "؟" in user_text
-        is_reply_to_bot = (
-            message.reply_to_message is not None
-            and message.reply_to_message.from_user is not None
-            and message.reply_to_message.from_user.is_bot
-        )
-        is_mention = f"@{bot_username}" in user_text
-
-        if not (is_question or is_reply_to_bot or is_mention):
-            return
-
-        logging.info(f"سؤال/رسالة من {user_name}: {user_text[:50]}...")
+        logging.info(f"رسالة من {user_name}: {user_text[:50]}...")
         await context.bot.send_chat_action(chat_id=message.chat_id, action="typing")
         reply_text = await generate_islamic_reply(user_text, user_name)
         await message.reply_text(text=reply_text, parse_mode=ParseMode.MARKDOWN)
 
     except TelegramError as e:
-        logging.error(f"خطأ Telegram في معالجة رسالة المجموعة: {e}")
+        logging.error(f"خطأ Telegram في معالجة الرسالة: {e}")
     except Exception as e:
-        logging.error(f"خطأ غير متوقع في معالجة رسالة المجموعة: {e}")
+        logging.error(f"خطأ غير متوقع في معالجة الرسالة: {e}")
 
 
 # ==========================================
-# ⏰ المحرك والجدولة الرئيسية (post_init + run_polling)
+# 🧪 أمر تجريبي لتجربة النشر الفوري (/test)
+# ==========================================
+async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """أمر لتجربة النشر الفوري للقناة"""
+    try:
+        await update.message.reply_text("⏳ جاري اختبار النشر الفوري للمجلة والمنشور الدوري...")
+        await publish_magazine_page(context.bot)
+        await publish_interval_post(context.bot)
+        await update.message.reply_text("✅ تم إرسال المنشورات بنجاح إلى القناة!")
+    except Exception as e:
+        await update.message.reply_text(f"❌ حدث خطأ أثناء الاختبار: {e}")
+
+
+# ==========================================
+# ⏰ المحرك والجدولة الرئيسية
 # ==========================================
 async def post_init(application: Application) -> None:
-    """يُستدعى بعد تهيئة التطبيق — نبدأ الجدولة هنا"""
+    """تفعيل جدولة المهام تلقائياً"""
     bot = application.bot
-    tz = pytz.timezone("Africa/Algiers")  # توقيت الجزائر/مكة
+    tz = pytz.timezone("Africa/Algiers")
 
     scheduler = AsyncIOScheduler(timezone=tz)
 
-    # 1. جدول منشورات المجلة (الصباح 09:00 والمساء 20:00)
+    # 1. نشر المجلة (الصباح 09:00 والمساء 20:00)
     scheduler.add_job(publish_magazine_page, 'cron', hour=9, minute=0, args=[bot])
     scheduler.add_job(publish_magazine_page, 'cron', hour=20, minute=0, args=[bot])
 
-    # 2. جدول المنشورات التحفيزية عبر Groq (كل 3 ساعات)
+    # 2. المنشور الدوري (كل 3 ساعات)
     scheduler.add_job(publish_interval_post, 'interval', hours=3, args=[bot])
 
     scheduler.start()
     application.bot_data['scheduler'] = scheduler
-    logging.info("تم تشغيل الجدولة بنجاح (المجلة + منشور كل 3 ساعات + ردود المجموعة)...")
+    logging.info("تم تشغيل الجدولة بنجاح...")
 
 
 async def post_stop(application: Application) -> None:
-    """يُستدعى عند إيقاف التطبيق — نوقف الجدولة بأمان"""
+    """إيقاف الجدولة بأمان"""
     scheduler = application.bot_data.get('scheduler')
     if scheduler and scheduler.running:
         scheduler.shutdown()
@@ -375,12 +374,15 @@ def main():
         .build()
     )
 
-    # إضافة معالج رسائل المجموعة
+    # 1. إضافة أمر الاختبار المباشر /test
+    application.add_handler(CommandHandler("test", test_command))
+
+    # 2. إضافة معالج الرسائل التفاعلي لكافة النصوص
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_group_message)
     )
 
-    logging.info("البوت يعمل...")
+    logging.info("البوت يعمل واستعد للاستجابة...")
     application.run_polling(drop_pending_updates=True)
 
 
