@@ -253,7 +253,7 @@ async def generate_islamic_reply(user_message: str, user_name: str) -> str:
     if not groq_client:
         return fallback
 
-    prompt = f"""أنت مساعد إسلامي متخصص في الفقه والتوجيه الديني، تتحدث بأسلوب لطيف ومحبب موجه للموحدين والمناصرين.
+    prompt = f"""أنت مساعد إسلامي متخصص في الفقه والتوجيه الديني، تتحدث بأسلوب لطيف ومحبب موجه للإخوة والأخوات الموحدين والمناصرين.
 
 رسالة العضو ({user_name}):
 {user_message}
@@ -340,45 +340,37 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
 # ==========================================
 # ⏰ المحرك والجدولة الرئيسية (Asyncio Scheduler)
 # ==========================================
-async def main():
-    # بناء التطبيق
+def main():
+    # 1. بناء التطبيق
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     bot = application.bot
 
-    # إضافة معالج رسائل المجموعة
+    # 2. إضافة معالج رسائل المجموعة
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_group_message)
     )
 
-    tz = pytz.timezone("Africa/Algiers")  # توقيت الجزائر/مكة
+    # 3. إعداد المجدول (Scheduler)
+    tz = pytz.timezone("Africa/Algiers")  # توقيت الجزائر
     scheduler = AsyncIOScheduler(timezone=tz)
 
-    # 1. جدول منشورات المجلة (الصباح 09:00 والمساء 20:00)
+    # جدول منشورات المجلة (الصباح 09:00 والمساء 20:00)
     scheduler.add_job(publish_magazine_page, 'cron', hour=9, minute=0, args=[bot])
     scheduler.add_job(publish_magazine_page, 'cron', hour=20, minute=0, args=[bot])
 
-    # 2. جدول المنشورات التحفيزية عبر Groq (كل 3 ساعات)
+    # جدول المنشورات التحفيزية عبر Groq (كل 3 ساعات)
     scheduler.add_job(publish_interval_post, 'interval', hours=3, args=[bot])
 
+    # بدء تشغيل المجدول
     scheduler.start()
-    logging.info("تم تشغيل البوت مع Groq API والجدولة بنجاح (المجلة + منشور كل 3 ساعات + ردود المجموعة)...")
+    logging.info("تم تشغيل البوت والمجدول بنجاح...")
 
-    async with application:
-        await application.start()
-        await application.updater.start_polling(drop_pending_updates=True)
-
-        # 🚀 نشر فوري عند الانطلاق للتأكد من عمل البوت
-        logging.info("جاري نشر أول منشور تجريبي...")
-        await publish_magazine_page(bot)
-
-        # إبقاء السيرفر يعمل بصفة مستمرة
-        while True:
-            await asyncio.sleep(3600)
+    # 4. تشغيل البوت بشكل آمن مستقر يدعم الاستقبال المستمر
+    application.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        main()
     except (KeyboardInterrupt, SystemExit):
         logging.info("تم إيقاف البوت.")
-        
