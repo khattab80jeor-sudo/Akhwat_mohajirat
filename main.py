@@ -30,7 +30,7 @@ MANDATORY_FOOTER = "هذي القناة هي صدقه جارية للأخت ال
 groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 # ==========================================
-# 📖 وظائف معالجة ونشر المجلة
+# 📖 وظائف معالجة ونشر المجلة (الصباح والمساء)
 # ==========================================
 def get_current_page():
     if os.path.exists(PAGE_TRACKER_FILE):
@@ -45,51 +45,19 @@ def save_current_page(page_num):
     with open(PAGE_TRACKER_FILE, "w") as f:
         f.write(str(page_num))
 
-def extract_page_text_only(pdf_path, page_num):
-    """استخراج النص فقط من صفحة الـ PDF دون إنشاء صورة"""
-    if not os.path.exists(pdf_path):
-        logging.error(f"❌ لم يتم العثور على ملف المجلة: {pdf_path}")
-        return None, 0
-
-    try:
-        doc = fitz.open(pdf_path)
-        total_pages = len(doc)
-
-        if total_pages == 0:
-            return None, 0
-
-        if page_num >= total_pages:
-            page_num = 0
-            save_current_page(0)
-
-        page = doc[page_num]
-        text = page.get_text()
-        doc.close()
-        return text, total_pages
-    except Exception as e:
-        logging.error(f"خطأ أثناء استخراج نص الصفحة: {e}")
-        return None, 0
-
 def extract_page_data(pdf_path, page_num):
-    """استخراج صورة ونص الصفحة"""
-    if not os.path.exists(pdf_path):
-        logging.error(f"❌ لم يتم العثور على ملف المجلة: {pdf_path}")
-        return None, None, 0
-
     try:
         doc = fitz.open(pdf_path)
         total_pages = len(doc)
 
-        if total_pages == 0:
-            return None, None, 0
-
         if page_num >= total_pages:
-            page_num = 0
-            save_current_page(0)
+            logging.info("تم الوصول إلى نهاية المجلة.")
+            return None, None, total_pages
 
         page = doc[page_num]
         text = page.get_text()
 
+        # استخراج الصفحة كصورة عالية الجودة
         pix = page.get_pixmap(dpi=200)
         image_path = f"page_{page_num + 1}.jpg"
         pix.save(image_path)
@@ -103,7 +71,7 @@ def extract_page_data(pdf_path, page_num):
 async def generate_groq_magazine_caption(raw_text, page_num):
     """إعادة صياغة نص صفحة المجلة عبر جروج (Groq AI) بدون إيموجي ومع هاشتاجات مرتبة"""
     if not groq_client or not raw_text or len(raw_text.strip()) < 10:
-        return f"منشور المجلة - الصفحة {page_num}\n\n{raw_text[:800]}"
+        return f"منشور المجلة - الصفحة {page_num}\n\n{raw_text[:800]}..."
 
     prompt = f"""
 أنت مساعد محتوى إسلامي احترافي. أعد صياغة وتنسيق النص التالي المستخرج من مجلة إسلامية ليكون منشوراً رائعاً وجذاباً لقناة تليجرام:
@@ -114,11 +82,12 @@ async def generate_groq_magazine_caption(raw_text, page_num):
 
 المطلوب والتعليمات الصارمة:
 1. يمنع منعاً باتاً استخدام أي إيموجي أو رموز تعبيرية نهائياً.
-2. نسّق النص بأسلوب مرتب وواضح وبدون رموز معقدة.
-3. أضف هاشتاجات مناسبة في نهاية النص بحيث تكون مرتبة كل هاشتاج في سطر منفصل، مثل:
-#الحمدلله_ربي
-#سبحان_الله
-4. اعد النص فقط بدون أي مقدمات أو كلام جانبي.
+2. نسّق النص باستخدام الماركداون (عناوين وضبط الأسطر).
+3. اجعل الصياغة قوية وواضحة ومرتبة.
+4. أضف هاشتاجات مناسبة في نهاية النص بحيث تكون مرتبة كل هاشتاج في سطر منفصل تماماً، مثل:
+#تنظيم_قاعدة_الجهاد
+#أنصار_الشريعة
+5. اعد النص فقط بدون أي مقدمات أو كلام جانبي.
 """
     try:
         loop = asyncio.get_running_loop()
@@ -133,68 +102,32 @@ async def generate_groq_magazine_caption(raw_text, page_num):
         return response.choices[0].message.content
     except Exception as e:
         logging.error(f"خطأ أثناء الاتصال بجروج (Groq): {e}")
-        return f"منشور المجلة - الصفحة {page_num}\n\n{raw_text[:800]}"
+        return f"منشور المجلة - الصفحة {page_num}\n\n{raw_text[:800]}..."
 
-async def publish_magazine_page(bot: Bot) -> bool:
-    """نشر صفحة من المجلة كصورة مع جزء من النص، وإكمال المتبقي في رسالة نصية تالية"""
+async def publish_magazine_page(bot: Bot):
+    """نشر صفحة من المجلة (الصباح والمساء)"""
     try:
         current_page = get_current_page()
         logging.info(f"جاري معالجة صفحة المجلة رقم: {current_page + 1}")
 
         image_path, raw_text, total_pages = extract_page_data(PDF_PATH, current_page)
 
-        if image_path is None or not os.path.exists(image_path):
-            logging.error("❌ لم يتم العثور على صورة الصفحة. تأكد من وجود ملف magazine.pdf")
-            return False
+        if image_path is None:
+            return
 
-        full_caption = await generate_groq_magazine_caption(raw_text, current_page + 1)
-        footer_text = f"\n\nالقناة: {CHANNEL_USERNAME}"
+        caption = await generate_groq_magazine_caption(raw_text, current_page + 1)
+        final_caption = f"{caption}\n\nالقناة: {CHANNEL_USERNAME}"
 
-        MAX_CAPTION_LEN = 950
+        if len(final_caption) > 1024:
+            final_caption = final_caption[:1020] + "..."
 
-        if len(full_caption) + len(footer_text) <= MAX_CAPTION_LEN:
-            first_part = full_caption + footer_text
-            second_part = None
-        else:
-            split_index = MAX_CAPTION_LEN - len(footer_text) - 10
-            last_newline = full_caption.rfind('\n', 0, split_index)
-            if last_newline != -1 and last_newline > 300:
-                split_index = last_newline
-
-            first_part = full_caption[:split_index] + footer_text
-            second_part = "تتمة منشور المجلة:\n\n" + full_caption[split_index:] + footer_text
-
-        # 1. إرسال الصورة مع الجزء الأول
         with open(image_path, 'rb') as photo:
-            try:
-                await bot.send_photo(
-                    chat_id=CHANNEL_USERNAME,
-                    photo=photo,
-                    caption=first_part,
-                    parse_mode=ParseMode.MARKDOWN
-                )
-            except TelegramError:
-                photo.seek(0)
-                await bot.send_photo(
-                    chat_id=CHANNEL_USERNAME,
-                    photo=photo,
-                    caption=first_part
-                )
-
-        # 2. إرسال الجزء المتبقي إن وجد
-        if second_part:
-            await asyncio.sleep(1)
-            try:
-                await bot.send_message(
-                    chat_id=CHANNEL_USERNAME,
-                    text=second_part,
-                    parse_mode=ParseMode.MARKDOWN
-                )
-            except TelegramError:
-                await bot.send_message(
-                    chat_id=CHANNEL_USERNAME,
-                    text=second_part
-                )
+            await bot.send_photo(
+                chat_id=CHANNEL_USERNAME,
+                photo=photo,
+                caption=final_caption,
+                parse_mode=ParseMode.MARKDOWN
+            )
 
         logging.info(f"تم بنجاح نشر الصفحة {current_page + 1} من {total_pages}")
         save_current_page(current_page + 1)
@@ -202,55 +135,21 @@ async def publish_magazine_page(bot: Bot) -> bool:
         if os.path.exists(image_path):
             os.remove(image_path)
 
-        return True
-
+    except TelegramError as e:
+        logging.error(f"خطأ في إرسال التليجرام: {e}")
     except Exception as e:
         logging.error(f"خطأ غير متوقع في نشر المجلة: {e}")
-        return False
-
-async def publish_magazine_text_only(bot: Bot) -> bool:
-    """نشر صفحة المجلة كنص فقط في القناة"""
-    try:
-        current_page = get_current_page()
-        logging.info(f"جاري معالجة ونشر نص صفحة المجلة رقم: {current_page + 1}")
-
-        raw_text, total_pages = extract_page_text_only(PDF_PATH, current_page)
-
-        if not raw_text:
-            logging.error("❌ لم يتم العثور على نص أو ملف PDF غير موجود.")
-            return False
-
-        caption = await generate_groq_magazine_caption(raw_text, current_page + 1)
-        final_text = f"{caption}\n\nالقناة: {CHANNEL_USERNAME}"
-
-        try:
-            await bot.send_message(
-                chat_id=CHANNEL_USERNAME,
-                text=final_text,
-                parse_mode=ParseMode.MARKDOWN
-            )
-        except TelegramError:
-            await bot.send_message(
-                chat_id=CHANNEL_USERNAME,
-                text=final_text
-            )
-
-        logging.info(f"تم نشر نص الصفحة {current_page + 1} بنجاح.")
-        save_current_page(current_page + 1)
-        return True
-
-    except Exception as e:
-        logging.error(f"خطأ في نشر نص المجلة: {e}")
-        return False
 
 
 # ==========================================
-# 🔄 وظيفة النشر كل 3 ساعات
+# 🔄 وظيفة النشر كل 3 ساعات عبر جروج (Groq)
 # ==========================================
 async def generate_motivational_content():
+    """توليد توجيهات ونصائح تحفيزية بدون إيموجي ومع هاشتاجات مرتبة"""
     fallback_messages = [
         "إلى الإخوة والأخوات الموحدين: ثباتكم على الحق هو الحصن المنيع للأمة. استعينوا بالله ولا تعجزوا، وكونوا دائماً يداً واحدة ودرعاً حامياً لقضايا أمتكم الإسلامية.\n\n#ثبات_الموحدين\n#سبحان_الله",
-        "نصيحة للموحدين المناصرين: اجعلوا عملكم خالصاً لوجه الله، وتسلحوا بالوعي والعلم، واعلموا أن كلمة الحق ونصرة المظلوم هي سهم في حماية الأمة ودفع الظلم عنها.\n\n#نصرة_الحق\n#الحمدلله_ربي"
+        "نصيحة للموحدين المناصرين: اجعلوا عملكم خالصاً لوجه الله، وتسلحوا بالوعي والعلم، واعلموا أن كلمة الحق ونصرة المظلوم هي سهم في حماية الأمة ودفع الظلم عنها.\n\n#نصرة_الحق\n#الحمدلله_ربي",
+        "يا أبناء الأمة الإسلامية: إن الأمة اليوم بأشد الحاجة إلى الوعي والثبات. كونوا درعاً للأمة ونوراً يضيء طريق الموحدين بالتذكير والدعاء والنصرة بالكلمة الطيبة.\n\n#وعي_الأمة\n#الله_أكبر"
     ]
 
     if not groq_client:
@@ -258,7 +157,7 @@ async def generate_motivational_content():
 
     prompt = """
 أكتب منشوراً إيمانياً وتوجيهياً قصيراً ومؤثراً وموجهاً للإخوة والأخوات (الموحدين المناصرين).
-المواضيع المطلوب معالجتها:
+المواضيع المطلوبة:
 1. نصائح وتوجيهات هامة للموحدين في الثبات، الصبر، الإخلاص، والوعي.
 2. رسائل تحفيزية ومشجعة تحثهم على أن يكونوا درعاً حامياً للأمة الإسلامية ونصرة قضاياها بالكلمة والحق.
 
@@ -266,8 +165,9 @@ async def generate_motivational_content():
 - أسلوب قوي، إيماني، وبليغ.
 - يمنع منعاً باتاً استخدام أي إيموجي أو رموز تعبيرية نهائياً.
 - أضف هاشتاجات إسلامية مناسبة في النهاية بحيث يكون كل هاشتاج في سطر منفصل، مثل:
-#الحمدلله_ربي
-#سبحان_الله
+#تنظيم_قاعدة_الجهاد
+#أنصار_الشريعة
+#ولاية_حضرموت
 - الطول: فقرة إلى فقرتين قصيرة فقط.
 - اعد النص المكتوب مباشرة بدون أي مقدمات أو كلام جانبي.
 """
@@ -283,39 +183,39 @@ async def generate_motivational_content():
         )
         return response.choices[0].message.content
     except Exception as e:
-        logging.error(f"خطأ في جروج: {e}")
+        logging.error(f"خطأ في جروج أثناء توليد منشور الـ 3 ساعات: {e}")
         return random.choice(fallback_messages)
 
 async def publish_interval_post(bot: Bot):
+    """النشر التلقائي كل 3 ساعات مع التذييل الإجباري"""
     try:
-        logging.info("جاري إعداد ونشر المنشور الدوري...")
+        logging.info("جاري إعداد ونشر المنشور الدوري بواسطة جروج (كل 3 ساعات)...")
         content = await generate_motivational_content()
 
         final_post = f"{content}\n\n{MANDATORY_FOOTER}"
 
-        try:
-            await bot.send_message(
-                chat_id=CHANNEL_USERNAME,
-                text=final_post,
-                parse_mode=ParseMode.MARKDOWN
-            )
-        except TelegramError:
-            await bot.send_message(
-                chat_id=CHANNEL_USERNAME,
-                text=final_post
-            )
-
+        await bot.send_message(
+            chat_id=CHANNEL_USERNAME,
+            text=final_post,
+            parse_mode=ParseMode.MARKDOWN
+        )
         logging.info("تم نشر المنشور الدوري بنجاح.")
 
+    except TelegramError as e:
+        logging.error(f"خطأ في إرسال المنشور الدوري على التليجرام: {e}")
     except Exception as e:
         logging.error(f"حدث خطأ في عملية النشر الدوري: {e}")
 
 
 # ==========================================
-# 💬 الرد والتفاعل مع الرسائل
+# 💬 الرد والتفاعل مع رسائل الأعضاء والمجموعة
 # ==========================================
 async def generate_channel_post_comment(post_text: str) -> str:
-    fallback = "بارك الله فيكم على هذا المنشور القيّم.\nنسأل الله أن ينفع به الأمة."
+    """توليد تعليق إسلامي تلقائي على منشورات القناة في المجموعة بدون إيموجي"""
+    fallback = (
+        "بارك الله فيكم على هذا المنشور القيّم.\n"
+        "نسأل الله أن ينفع به الأمة ويجعله في ميزان حسنات الجميع."
+    )
 
     if not groq_client:
         return fallback
@@ -327,9 +227,9 @@ async def generate_channel_post_comment(post_text: str) -> str:
 
 المطلوب:
 - اكتب تعليقاً قصيراً ومحفزاً على هذا المنشور (3 أسطر كحد أقصى).
-- أسلوب إيماني دافئ.
+- أسلوب إيماني دافئ يشجع الإخوة والأخوات على التفاعل والقراءة.
 - يمنع منعاً باتاً استخدام أي إيموجي أو رموز تعبيرية.
-- اكتب التعليق مباشرة بدون مقدمات."""
+- اكتب التعليق مباشرة بدون مقدمات مع ذكر الدعاء لإخواننا المجاهدين في جزيرة العرب."""
 
     try:
         loop = asyncio.get_running_loop()
@@ -344,11 +244,16 @@ async def generate_channel_post_comment(post_text: str) -> str:
         )
         return response.choices[0].message.content
     except Exception as e:
+        logging.error(f"خطأ في Groq أثناء توليد تعليق منشور القناة: {e}")
         return fallback
 
 
 async def generate_islamic_reply(user_message: str, user_name: str) -> str:
-    fallback = f"أهلاً بك أخي/أختي {user_name}.\nجزاك الله خيراً وبارك الله فيك."
+    """توليد رد إسلامي دافئ على كل رسائل الأعضاء عبر Groq بدون إيموجي"""
+    fallback = (
+        f"أهلاً بك أخي/أختي {user_name}.\n"
+        "جزاك الله خيراً وبارك الله فيك، ونسأل الله أن يثبتنا وإياك على الحق."
+    )
 
     if not groq_client:
         return fallback
@@ -360,6 +265,9 @@ async def generate_islamic_reply(user_message: str, user_name: str) -> str:
 
 المطلوب:
 - أجب أو تفاعل مع الرسالة بشكل مختصر ومفيد ومؤدب ودافئ.
+- إذا كانت الرسالة سؤالاً شرعياً أو عاماً، أجب بما يوافق مذهب أهل السنة والجماعة مع الاستشهاد بالدليل إن أمكن.
+- إذا كانت مشاركة أو تحية أو تعليقاً، رد بتحية طيبة ودعاء رائع.
+- اختم دائماً بدعاء أو جملة تحفيزية قصيرة.
 - يمنع منعاً باتاً استخدام أي إيموجي أو رموز تعبيرية.
 - الرد لا يزيد عن 4 إلى 5 أسطر.
 - لا تذكر أبداً أنك ذكاء اصطناعي.
@@ -378,10 +286,12 @@ async def generate_islamic_reply(user_message: str, user_name: str) -> str:
         )
         return response.choices[0].message.content
     except Exception as e:
+        logging.error(f"خطأ في Groq أثناء توليد الرد: {e}")
         return fallback
 
 
 async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """معالجة كافة رسائل المجموعة والخاص"""
     try:
         message = update.message
         if not message or not message.text:
@@ -389,69 +299,66 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
         user_text = message.text.strip()
 
+        # ✅ الحالة 1: منشور القناة المستورد تلقائياً للمجموعة
         is_channel_post = (
             message.sender_chat is not None
             and message.sender_chat.type == "channel"
         )
 
         if is_channel_post:
+            logging.info(f"منشور قناة جديد في المجموعة، جاري التعليق عليه...")
             await context.bot.send_chat_action(chat_id=message.chat_id, action="typing")
             comment = await generate_channel_post_comment(user_text)
-            await message.reply_text(text=comment)
+            await message.reply_text(text=comment, parse_mode=ParseMode.MARKDOWN)
             return
 
+        # تجاهل رسائل البوتات الأخرى
         if message.from_user and message.from_user.is_bot:
             return
 
+        # ✅ الحالة 2: الرد التفاعلي المباشر على كافة رسائل الإخوة والأخوات
         user_name = message.from_user.first_name if message.from_user else "عضو"
+
+        logging.info(f"رسالة من {user_name}: {user_text[:50]}...")
         await context.bot.send_chat_action(chat_id=message.chat_id, action="typing")
         reply_text = await generate_islamic_reply(user_text, user_name)
-        await message.reply_text(text=reply_text)
+        await message.reply_text(text=reply_text, parse_mode=ParseMode.MARKDOWN)
 
+    except TelegramError as e:
+        logging.error(f"خطأ Telegram في معالجة الرسالة: {e}")
     except Exception as e:
-        logging.error(f"خطأ في معالجة الرسالة: {e}")
+        logging.error(f"خطأ غير متوقع في معالجة الرسالة: {e}")
 
 
 # ==========================================
-# 🧪 الأوامر المباشرة (Commands)
+# 🧪 أمر تجريبي لتجربة النشر الفوري (/test)
 # ==========================================
 async def test_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """أمر لتجربة النشر الفوري للقناة (صورة + نص)"""
+    """أمر لتجربة النشر الفوري للقناة"""
     try:
-        await update.message.reply_text("جاري اختبار نشر المجلة والمنشور الدوري...")
-        success = await publish_magazine_page(context.bot)
-        if not success:
-            await update.message.reply_text("⚠️ لم يتم نشر المجلة كصورة! تأكد من وجود ملف magazine.pdf.")
-        
+        await update.message.reply_text("جاري اختبار النشر الفوري للمجلة والمنشور الدوري...")
+        await publish_magazine_page(context.bot)
         await publish_interval_post(context.bot)
-        await update.message.reply_text("تم اكتمال الاختبار.")
+        await update.message.reply_text("تم إرسال المنشورات بنجاح إلى القناة.")
     except Exception as e:
         await update.message.reply_text(f"حدث خطأ أثناء الاختبار: {e}")
-
-async def publish_text_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """أمر لنشر نص المجلة فقط في القناة بدون صورة"""
-    try:
-        await update.message.reply_text("جاري نشر نص صفحة المجلة في القناة...")
-        success = await publish_magazine_text_only(context.bot)
-        if success:
-            await update.message.reply_text("✅ تم نشر نص المجلة بنجاح في القناة.")
-        else:
-            await update.message.reply_text("❌ فشل النشر! تأكد من وجود ملف magazine.pdf.")
-    except Exception as e:
-        await update.message.reply_text(f"حدث خطأ: {e}")
 
 
 # ==========================================
 # ⏰ المحرك والجدولة الرئيسية
 # ==========================================
 async def post_init(application: Application) -> None:
+    """تفعيل جدولة المهام تلقائياً"""
     bot = application.bot
     tz = pytz.timezone("Africa/Algiers")
 
     scheduler = AsyncIOScheduler(timezone=tz)
 
+    # 1. نشر المجلة (الصباح 09:00 والمساء 20:00)
     scheduler.add_job(publish_magazine_page, 'cron', hour=9, minute=0, args=[bot])
     scheduler.add_job(publish_magazine_page, 'cron', hour=20, minute=0, args=[bot])
+
+    # 2. المنشور الدوري (كل 3 ساعات)
     scheduler.add_job(publish_interval_post, 'interval', hours=3, args=[bot])
 
     scheduler.start()
@@ -460,9 +367,11 @@ async def post_init(application: Application) -> None:
 
 
 async def post_stop(application: Application) -> None:
+    """إيقاف الجدولة بأمان"""
     scheduler = application.bot_data.get('scheduler')
     if scheduler and scheduler.running:
         scheduler.shutdown()
+        logging.info("تم إيقاف الجدولة بأمان.")
 
 
 def main():
@@ -474,11 +383,10 @@ def main():
         .build()
     )
 
-    # الأوامر المتاحة:
+    # 1. إضافة أمر الاختبار المباشر /test
     application.add_handler(CommandHandler("test", test_command))
-    application.add_handler(CommandHandler("publish_text", publish_text_command))
 
-    # معالج الرسائل
+    # 2. إضافة معالج الرسائل التفاعلي لكافة النصوص
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_group_message)
     )
@@ -489,4 +397,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-                          
