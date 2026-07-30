@@ -87,7 +87,7 @@ async def generate_groq_magazine_caption(raw_text, page_num):
 4. اعد النص فقط بدون مقدمات.
 """
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
             None,
             lambda: groq_client.chat.completions.create(
@@ -165,7 +165,7 @@ async def generate_motivational_content():
 - اعد النص المكتوب مباشرة بدون أي مقدمات أو كلام جانبي.
 """
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
             None,
             lambda: groq_client.chat.completions.create(
@@ -227,7 +227,7 @@ async def generate_channel_post_comment(post_text: str) -> str:
 - اكتب التعليق مباشرة بدون مقدمات."""
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
             None,
             lambda: groq_client.chat.completions.create(
@@ -268,7 +268,7 @@ async def generate_islamic_reply(user_message: str, user_name: str) -> str:
 - اكتب الرد مباشرة بدون مقدمات."""
 
     try:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(
             None,
             lambda: groq_client.chat.completions.create(
@@ -294,7 +294,6 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
         user_text = message.text.strip()
 
         # ✅ الحالة 1: منشور من القناة ظهر في المجموعة المرتبطة
-        # يحدث هذا عندما sender_chat هو قناة (channel)
         is_channel_post = (
             message.sender_chat is not None
             and message.sender_chat.type == "channel"
@@ -341,7 +340,7 @@ async def handle_group_message(update: Update, context: ContextTypes.DEFAULT_TYP
 # ⏰ المحرك والجدولة الرئيسية (post_init + run_polling)
 # ==========================================
 async def post_init(application: Application) -> None:
-    """يُستدعى بعد تهيئة التطبيق — نبدأ الجدولة والمنشور الأول هنا"""
+    """يُستدعى بعد تهيئة التطبيق — نبدأ الجدولة هنا"""
     bot = application.bot
     tz = pytz.timezone("Africa/Algiers")  # توقيت الجزائر/مكة
 
@@ -357,10 +356,6 @@ async def post_init(application: Application) -> None:
     scheduler.start()
     application.bot_data['scheduler'] = scheduler
     logging.info("تم تشغيل الجدولة بنجاح (المجلة + منشور كل 3 ساعات + ردود المجموعة)...")
-
-    # 🚀 نشر فوري عند الانطلاق للتأكد من عمل البوت
-    logging.info("جاري نشر أول منشور تجريبي...")
-    await publish_magazine_page(bot)
 
 
 async def post_stop(application: Application) -> None:
@@ -391,4 +386,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+        
